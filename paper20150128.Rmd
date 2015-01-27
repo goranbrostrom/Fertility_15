@@ -1,0 +1,388 @@
+---
+title: "Repeated events and dynamic covariates"
+author: "Göran Broström"
+date: '2015-01-23'
+output:
+  html_document:
+    fig_caption: yes
+  pdf_document:
+    fig_caption: yes
+---
+
+## Introduction
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache=TRUE,echo=TRUE)
+```
+
+
+Ways of analyzing fertility data (or more generally, repeated events data) are discussed. It is assumed that the fertility histories of women are collected in a dynamic way, following each woman from birth to death and noting the exact dates of her deliveries, and information of each in terms of sex of child, stillbirth, mother's civil status, socioeconomic status, 
+etc. Further, links to each mother's husband (if married) and parents are normally present, which will allow us to identify siblings and and other relatives, which may be relevant in modeling family dependencies in fertility "behaviour".
+
+But on this first occasion I will discuss the concept of *dynamic covariates* in the context of Cox regression with repeated events, by illustrating it by looking at real fertility data and by simulation. 
+
+## Data
+
+The data set we use for illustration is taken from the DDB, Skellefteå data. Women born 1821--1870 are followed over their fertility and presence period, that is, from age 15 until age 49 or death or out-migration, whichever comes first. Their exact age at deliveries are recorded, as well as their birthdate and civil status. Multiple births (twins) may complicate the picture I want to paint, so we will for now exclude all mothers who experience a multiple birth.
+
+The raw data set is saved in a file named 'fert.rda'. The extension '.rda' signals that the data format is the R 'native' data format. 
+
+
+```{r, echo=TRUE}
+library(knitr)
+load("fert.rda")
+x <- head(fert)
+kable(x, digits = 3)
+```
+
+
+**load** is the command to load a data file into the 'work space' of **R**. **kable** is a function in the library *knitr*, and _head_ is a function that returns a few (*six* by default) lines from the top ('head') of a data frame. **kable** 'pretty-prints' the output (a matrix).
+
+The variables are: **id** is the DDB identification number, in this case for the mother. The data frame is organized by births for each woman and each row gives the start age (*enter*) and stop age (*exit*) for a time interval between two births. Exceptions are the first and last intervals for each woman: the first interval starts at age 15 (approximately), and the last interval ends at age 50 (with no birth), or earlier, if the woman died or in some other way was lost to follow-up (we call it *censoring*).  
+
+For example, the woman with id `r x[1, 1]` is represented by five records (rows) in the data frame (that is what the variable **antrec** says). In the first record, the variable **parity** is zero, signifying that during this age interval (**enter** to **exit**), she has no children. At age 
+`r round(x[1, 5], digits = 3)` she gives birth to a boy (seen in two ways, **event** = 1 and **sex** = man) with the DDB id (**ch.id**) `r x[1, 8]`.
+
+The variable **event** takes three values, 0 = censoring, 1 = birth of a boy, and 2 = birth of a girl. I have removed all mothers with multiple-births (twins, etc.), and also all mothers that come in (to Skellefteå) late (after age 15), as well as all mothers with too short intervals (less than nine  months) between births. All in all, we lose about five per cent of all mothers in this way. All this is done in order to avoid trivial complications when I illustrate the simple ideas in the analysis.
+
+The variable **birthdate** refers to *mother's* birthdate, and the sample is (essentially) all women born between January 1, 1820 and December 31, 1869. Note that *birthdate* is given in *decimal* form, where the decimal part is a fraction of a year. Dates are otherwise given in the form 'yyyymmdd' in the original DDB files, and there are two functions in the **eha** package that transforms back and forth between the two formats.
+
+```{r echo=TRUE}
+library(eha)
+toDate(1867.669)
+toTime("1867-09-02")
+library(skel14)
+tillTid(18670902)
+```
+
+And, as we see at the end, the function *tillTid* in the package **skel14**. The reason for having dates as numeric is of course that it makes mathematics involving dates easy.
+
+## The counting process approach
+
+We define $$\{N_i(t), 15 \le t \le 50\}, \quad i \in \text{mother's id}$$ as the *number of births before and including age $t$* for woman No. $i$. By age we mean *exact age*, measured by a precision of a day, but with *time unit year*. Thus $N_i$ are *counting processes* with jumps of size one (remember, no twin births) at the age of the mother at deliveries. For mother No. $160$ it looks like this (with the code producing the figure):
+
+```{r, echo=TRUE,fig.cap="Counting the number of births for mother with id = 160."}
+enter <- fert$enter[fert$id == 160]
+exit <- fert$exit[fert$id == 160]
+n <- length(enter)
+plot(c(enter[1], exit[1]), c(0, 0), type = "l", col = "blue", xlim = c(15, 50), 
+     ylim = c(0, n), xlab = "Age", ylab = "N(t)", axes = FALSE)
+axis(1, at = round(c(15, exit)), labels = round(c(15, exit)), cex.axis = 0.85)
+axis(2)
+box()
+points(exit[1], 0, pch = "c", col = "blue")
+for(i in 2:n){
+    lines(c(enter[i], exit[i]), c(i-1, i-1), col = "blue")
+    points(exit[i], i-1, pch = "c", col = "blue")
+}
+```
+
+$N(t)$ is a *right-continuous* function, meaning essentially that at jump points, the value is the larger of the two possible values. $N(t-)$ denotes its *left-continuous* counterpart, that is, it is defined as the number of births up to but *not including* age $t$.
+
+### External covariates
+
+If the *intensity function* of $N$ only depends on *external covariates*, then $N$ is a *Poisson process*, implying that the intensity at time $t$ is independent of previous events in the process, in particular of $N(t-)$ and time since last birth.  It could look like this:
+
+$$ h(t; x) = h_0(t) \exp(\beta x), \quad 0 \le t \le 50, $$
+
+with $x$ being an external covariate, for instance **birthdate** in our example. This is a *proportional hazards model* (Cox, 1972) and it is easily estimated with any software capable of fitting a Cox regression model with data being  *left truncatated*. In **R**, we can use the **coxreg** function in the *eha* package (essentially a wrapper for the **coxph** function in the *survival* package).
+
+```{r, echo=TRUE}
+library(eha)
+fit <- coxph(Surv(enter, exit, event > 0.5) ~ birthdate, data = fert)
+kable(summary(fit)$coef, digits = 3)
+```
+
+The interpretation of the estimated regression coefficient is that the birth intensity increases by 0.18 percent per year; not a very impressive amount, but statistically *very significant*, mostly due to the large amount of births in our data.
+ 
+To forego some theory, we must add to this that the estimated standard error and $p$-value are too optimistic. We need to do as follows
+
+```{r, echo=TRUE}
+fit <- coxph(Surv(enter, exit, event > 0.5) ~ birthdate + cluster(id), data = fert)
+kable(summary(fit)$coef, digits = 3)
+```
+
+which gives exactly the same parameter estimate as before, but a "robust" estimator of its standard error. The $p$- value is larger (because of that), but still it shows statistical significance.
+
+### Internal covariates
+
+*Internal* covariates are covariates that vary with each individual. They are typically *time-varying*, and **civst** is a typical example. The "problem" with internal covariates is that they may depend on the event status of the process, even things that we cannot measure. It is necessary to be careful when interpreting regression coefficients when internal covariates are included in the model.
+
+We *categorize* the variable **birthdate** (for simpler exposition in the following) and put the result in a new variable called **period**:
+
+```{r period}
+fert$period <- cut(fert$birthdate, c(1820, 1850, 1870), labels = c("first", "second"))
+with(fert[fert$event > 0.5, ], table(period, sex))
+```
+
+Then, an analysis with both **period** and **civst**:
+
+```{r cluster}
+fit <- coxph(Surv(enter, exit, event > 0.5) ~ period + civst + cluster(id), data = fert)
+kable(summary(fit)$coef, digits = 3)
+```
+
+What about the *proportionality assumption*? Best is to look at it graphically; first regarding **period**:
+
+```{r propass, fig.cap = "Log cumulative hazards for two time periods, adjusted for 'civil status'."}
+fit1 <- coxph(Surv(enter, exit, event > 0.5) ~ strata(period) + civst, data = fert)
+plot(survfit(fit1), mark.time = FALSE, fun = "cloglog", col = c("red", "blue"), 
+     xlab = "Age")
+```
+
+On this scale ("cloglog"), the curves should have a constant *absolute* distance over time, if the *PH* assumption holds. Disregarding the "random fluctuations" before age 19 (or so), we see clearly that the two curves converge, and the PH assumption is questionable. A formal test is available:
+
+```{r zph}
+cox.zph(fit1)
+```
+
+The null hypothesis is "The PH assumption is TRUE", and the $p$-value is effectively zero, so it is safe to reject the PH hypothesis. However, from the graph it looks as if the deviation is not that severe; remember that the number of births is huge, so even small effects will be detected. 
+
+Let us look at the graph with "natural" scales:
+
+```{r natscale, fig.cap = "Cumulative hazards for two time periods, adjusted for 'civil status'."}
+plot(survfit(fit1), mark.time = FALSE, fun = "cumhaz", col = c("red", "blue"), 
+     xlim = c(15, 50), xlab = "Age", ylab = "Cumulative hazards")
+text(35, 2, "first period", col = "red")
+text(30, 3.5, "second period", col = "blue")
+abline(h = 0)
+```
+
+We would like to look at the *hazard functions* (instead of the *cumulative* ones). For non-parametric estimators, this requires somewhat complicated so-called *kernel* methods. However, with this huge amount of data, a flexible *parametric* model is satisfactory; the *piecewise constant hazard model*. We split the time interval $(15, 50])$ into 35 on-year-long sub-intervals and assume constant intensity within each sub-interval. Like this:
+
+```{r strataper, fig.cap = "Hazard functions for two time periods, adjusted for 'civil status'."}
+fit <- phreg(Surv(enter, exit, event > 0.5) ~ strata(period) + civst, data = fert, 
+             dist = "pch", cuts = 16:49)
+summary(fit)
+plot(fit, fn = "haz", col = c("red", "blue"), printLegend = FALSE, main = "",
+     xlab = "Age", ylab = "Hazard functions")
+legend("center", legend = c("first", "second"), col = c("red", "blue"), lty = 1:2)
+abline(h = 0)
+```
+
+Here the non-proportionality is easier to spot: The second period dominates the low ages, while the first period takes over (more or less) in the high ages.
+
+Now let us look at **civst**:
+
+```{r hazard, fig.cap="Hazard functions for married and unmarried, adjusted for 'period'."}
+fit1 <- phreg(Surv(enter, exit, event > 0.5) ~ period + strata(civst), data = fert, 
+              dist = "pch", cuts = 16:49)
+summary(fit1)
+plot(fit1, fn = "haz", col = c("red", "blue"), printLegend = FALSE, main = "",
+     xlab = "Age", ylab = "Hazard functions")
+legend("center", legend = c("married", "unmarried"), col = c("red", "blue"), lty = 1:2)
+abline(h = 0)
+```
+
+Not that easy to judge the PH assumption from this plot. A better idea is to plot the *ratio* between the two plots, like this:
+
+```{r ratioplot,fig.cap="The ratio between the hazards of delivery for unmarried and married."}
+plot(15:49, fit1$hazards[2, ] / fit1$hazards[1, ], type = "l", xlab = "Age", 
+     ylab = "Hazard ratio", ylim = c(0, 1))
+abline(h = 0)
+abline(h = exp(fit$coef[1]), col = "blue", lty = 2)
+text(40, 0.3, "'PH estimate'", col = "blue")
+text(21, 0.5, "'Reality'")
+```
+
+Clearly, and as expected, the relative frequency of "illegitimate" births decreases with age, and the PH assumption is violated. 
+
+### Dynamic covariates
+
+Finally, we define, as a subgroup of the internal covariates, *dynamic* covariates: They are direct functions of the history of the process $N(t)$ itself, for instance $N(t-)$, or 'time since last event', etc. In our data set *fert*, the variable **parity** is exactly equal to $N(t-)$ for $\text{enter} < t \le \text{exit}$. When including $N(t-)$ in the definition of the hazard function, it is not necessary to use the 'robust' standard errors:
+
+```{r dynamic}
+fit1 <- coxph(Surv(enter, exit, event > 0.5) ~ parity + period, data = fert)
+kable(summary(fit1)$coef, digits = 3)
+```
+
+Note how the inclusion of **parity** deflates the importance of **period**; without **parity** we have
+
+```{r nodynam}
+fit <- coxph(Surv(enter, exit, event > 0.5) ~ period, data = fert)
+kable(summary(fit)$coef, digits = 3)
+```
+
+There is a natural explanation to this: The covariate **period** affects $N(t)$, and then it is natural to think that this affection also is there for earlier values of $N(t)$, and especially $N(t-)$, which in fact acts as an *intermediate* covariate and "steals" some of the effect from **period**. So, if we are interested primarily of the effect of **period**, which of the two models should we choose?
+
+The answer to that question is probably the one *without parity*; it gives you the *crude* (total) effect (think 'sum of the direct and indirect effects').
+
+The covariate **parity** ($N(t-)$) catches the *dynamics* of the counting process $N(t)$, that is the dependence of its own past. This is a way to interpret the *dependence* between the lengths of successive birth intervals for a woman: From the beginning (at age 15), all women have the same probabilistic future regarding their paths of giving births. However, by chance, some get the first child early, while others will have to wait longer. If we assume that the intensity of giving birth is increased by `r round(100 * fit1$coef[1])` per cent (as above), then the 'early-birds' will immediately get an advantage in the probability of getting many children.
+
+In the following example I am simulating a counting process with a constant intensity, but it is increased by 16 percent (or so) at each birth, similar to the model above. Besides that, this is *not* a realistic model for fertility, but it is good enough (and simple!) to make a point.
+
+```{r simN}
+source("R/simN.R")
+simN
+set.seed(101001)
+x <- simN()
+```
+
+Note that only every tenth result is printed. The 100 simulated birth ages are shown in this graph:
+
+```{r dishonest, fig.cap="A 'dishonest' birth process."}
+plot(x$ages, rep(1, length(x$ages)), type = "b", col = "blue", xlim = c(15, 50), 
+     xlab = "Age", ylab = "", axes = FALSE)
+axis(1)
+axis(2, at = 100)
+lines(c(15, 50), c(1, 1))
+box()
+```
+
+The process "chokes" between the ages 32 and 33. So what is happening? The answer is that a model like
+
+$$
+h(t) = h_0(t) \exp\{\beta N(t-)\}, \quad t > 0
+$$
+
+is *dishonest* if $\beta > 0$, meaning that it will *explode* in finite time with a positive probability (this is 'the point'). That is exactly what happened in the example above. The problem is of course that the intensity is *exponentially increasing*, and that is 'too fast'.
+
+Is there a way out of this? Yes, in our fertility application, we know there is a *delay* immediately after each birth, say for nine months. That is the argument **wait** in the function **simN**. Repeating the simulation with the same 'seed' but with **wait = 0.75**, we get
+
+```{r waitsim}
+set.seed(101001)
+x <- simN(wait = 0.75)
+```
+
+```{r delays, fig.cap = "A birth process with 'delay'."}
+plot(x$ages, rep(1, length(x$ages)), type = "b", col = "blue", xlim = c(15, 50), 
+     xlab = "Age", ylab = "", axes = FALSE)
+axis(1)
+axis(2, at = 100)
+lines(c(15, 50), c(1, 1))
+box()
+```
+
+This situation is similar to, but not equal to, the problem with a Geiger counter having a "dead time", that is, after the arrival of an impulse, the counter is locked for a (short) time period, and impulses arriving too soon after another will not be counted.
+
+### Estimation allowing for delay
+
+Estimating the model with a nine month delay is straightforward; in principle, add 0.75 to to the **enter** covariate. Some exceptions must be respected, though; the first intervals must be treated differently, and we must look up for other intervals that are shorter than 0.75 (notably the last). We introduce a new variable, **enter1**:
+
+```{r newenter}
+fert$enter1 <- ifelse(fert$parity > 0.5, 
+                      pmin(fert$enter + 0.75, fert$exit - 0.001),
+                      fert$enter)
+## Checking ...
+kable(head(fert[, c("id", "parity", "enter", "enter1", "exit")]), digits = 3)
+```
+
+Looks OK (so far...). Let us rerun the above analysis with the "new" data:
+
+
+
+```{r newdata}
+fit2 <- coxph(Surv(enter1, exit, event > 0.5) ~ parity + period, data = fert)
+kable(summary(fit2)$coef, digits = 3)
+```
+
+Looks like a huge difference! Let us put the coefficients from the two analyses in the same table for easier comparison:
+
+```{r sametable}
+x <- cbind(exp(fit1$coef), exp(fit2$coef))
+colnames(x) <- c("No delay","Delay")
+kable(x, digits = 3)
+```
+
+Quite a substantial change: The effect of **parity** is much *stronger*, while the effect of **period** is *weaker*. In the next figure we see how the crude hazard rate is affected by delay. We expect the delayed version to have larger hazards, because the number of events is the same, but the total exposure time is shorter.
+
+```{r crudehaz, fig.cap = "Crude hazard rates, with and without delay."}
+f <- phreg(Surv(enter, exit, event > 0.5) ~ 1, dist = "pch", cuts = 16:49, data = fert)
+f1 <- phreg(Surv(enter1, exit, event > 0.5) ~ 1, dist = "pch", cuts = 16:49, data = fert)
+plot(15:49, f1$hazards[1, ], type = "s", col = "blue", xlab = "Age", ylab = "Hazards")
+lines(15:49, f$hazards[1, ], type = "s", col = "red", lty = 2)
+abline(h = 0)
+legend("center", legend = c("Delay", "No delay"), col = c("blue", "red"), lty = 1:2)
+```
+
+Quite a substantial change in the "mid-ages".
+
+## A frailty model approach
+
+The last results above concerning **parity** are counterintuitive; I would expect to see *decreasing* intensity of having another child with increasing parity. Maybe that effect is a consequence of the fact that this group of women is very non-homogeneous beyond what we can measure with covariates? If a subgroup of women have a very high fertility, then they would reach higher parities than the other women, and therefore when we observe a woman with a high parity, she probably belongs to the high-fertility group and thus is expected to have a short 'next interval'. 
+
+Since we cannot observe the factors that give rise to this in-homogeneity, we apply a random-effects ("frailty") model. Conditionally on the random effects, it is a PH model, mut since we cannot observe the random effect, it has to be integrated out. This results in a 'population model', i.e. an average over the individuals. In **R** we can use the function **coxme** from the pachage with the same name:
+
+```{r coxme}
+library(coxme)
+fit <- coxme(Surv(enter1, exit, event > 0.5) ~ period + parity + (1 | id), data = fert)
+fit
+```
+
+From the output it is clear that there is a very strong random effect (women are different!). Note also tha the fixed effect for **parity** now is still very strong, but *in the opposite direction*! That is, the direction our (my?) intuition says.
+
+## Stratification
+
+An alternative to the frailty model approach is to *stratify* wrt **id** (This old concept has lately been reinvented by economists, who call it a 'fixed effects model', thus redefining another old statistical term!). Note that we then *must* change time scale from age to 'time since last event'. A case can be made for excluding the interval from 15 to the first birth; we check both variants.  
+We cannot have 'birthdate' or 'period' in the model, since they are constant within each stratum (woman).
+
+```{r strata}
+fert$age <- fert$enter - 30
+fit <- coxph(Surv(exit - enter1, event > 0.5) ~ age + I(age^2) + as.factor(parity) + strata(id), data = fert)
+```
+
+Note the definition of **age**! Continuous covariates should *always* explicitely be *centered*, especially if one wants to include powers or interactions in the model.
+
+
+```{r sumstrata}
+kable(summary(fit)$coef, digits = 3)
+plot(0:16, c(0, fit$coef[-c(1, 2)]), type = "b", ylab = "Effect", xlab = "Parity")
+```
+
+Note that the effect of **parity** is almost linear, *except* for the first and last parities. Regarding the last, only one woman reaches parity 16 and gets a 17:th child. In order to "make it clean", her last interval is removed:
+
+```{r remove16, fig.cap="Effect of parity with last removed."}
+fert <- fert[fert$parity < 15.5, ]
+plot(0:15, c(0, fit$coef[-c(1, 2, 18)]), type = "b", ylab = "log(Effect)", xlab = "Parity")
+```
+
+Two conclusions can be drawn: 
+
+1. The time from age 15 to the first birth should be analyzed separately,
+
+2. Parity can otherwise safely be treated as a linear covariate.
+
+Let us do this.  Time to first birth:
+
+```{r firstbirth}
+fit <- coxph(Surv(enter, exit, event > 0.5) ~ period + civst, 
+             data = fert[fert$parity < 0.5, ])
+kable(summary(fit)$coef, digits = 3)
+```
+
+Note that we here are back to pure survival analysis; no repeated events! Checks of proportionality show nothing in particular.
+
+Then intervals from first birth and forward in age:
+
+```{r restbirths, echo = FALSE}
+fit <- coxph(Surv(exit - enter1, event > 0.5) ~ age + I(age^2) + 
+                 I(parity - 1) + strata(id), 
+             data = fert[fert$parity > 0.5, ])
+kable(summary(fit)$coef, digits = 4)
+```
+
+Both the effects of **age** and **parity** are highly significant; the effects look like this:
+
+```{r figage, fig.cap = "Effect of parity, controlled for mother's age. Effect of mother's age on fertility, controlled for parity. Reference age is 30.",echo=FALSE}
+x <- seq(15, 50, length = 1000)
+par(mfrow = c(1, 2))
+y <- 0:14
+plot(y, exp(fit$coef[3] * y), type = "b", xlab = "Parity", 
+     ylab = "Effect", axes = FALSE, col = "blue")
+axis(1, at = c(0, 4, 9), labels = c(1, 5, 10))
+axis(2, at = c(0, 0.5, 1))
+box()
+abline(h = 0)
+plot(x, exp((x - 30) * fit$coef[1] + (x - 30)^2 * fit$coef[2]), 
+     xlab = "Age", ylab = "Effect", type = "l", axes = FALSE, 
+     col = "blue")
+axis(1, at = c(15, 30, 50))
+axis(2, at = c(0, 0.5, 1.0, 1.4))
+box()
+abline(h = 0)
+lines(c(14, 30), c(1, 1), lty = 2)
+lines(c(30, 30), c(0, 1), lty = 2)
+par(mfrow = c(1, 1))
+```
+
+(To be continued.)

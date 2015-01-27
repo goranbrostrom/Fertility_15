@@ -1,0 +1,937 @@
+\documentclass[a4paper,11pt]{beamer}
+
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+\usepackage{amssymb}
+%\usepackage{natbib}
+
+%\usepackage[figuresonly]{endfloat}
+
+%\bibliographystyle{apalike}
+
+\usepackage{color}
+
+\newcommand{\emp}[1]{\textcolor{blue}{#1}}
+
+\usetheme{Singapore}% best choice.
+  \setbeamercovered{transparent}%
+
+\newcommand{\R}{{\bf R}}
+\newcommand{\code}[1]{{\tt #1}}
+
+\title{Repeated events and dynamic covariates,\\ Part I}
+\author{Göran Broström}
+\date{January 28, 2015}
+
+\begin{document}
+
+\maketitle
+
+\begin{frame}{Fertility}
+
+<<setup, include = FALSE>>=
+library(knitr)
+opts_chunk$set(engine='R',dev='pdf',fig.path='figs/slide1-',tidy=FALSE,fig.height=5.5,fig.width=8,strip.white=TRUE,cache=TRUE,echo=FALSE,message=FALSE)##$
+load("fert.rda")
+@
+
+Generally,
+
+\begin{itemize}
+\item Fertility data (\emp{repeated events data})
+are discussed. 
+\item Fertility histories
+collected in a dynamic way, 
+
+\item Information of each birth in terms
+of sex of child, stillbirth, mother's civil status, socioeconomic status,  
+etc. 
+
+\item Links to husband and parents (but not here).
+
+\end{itemize}
+
+But here \emp{somewhat less}
+.
+\end{frame}
+
+\begin{frame}{DDB, Skellefteå Data}
+
+\begin{itemize}
+\item Women born \emp{1821--1870},
+\item Exact age at deliveries,
+\item \emp{Birthdate} and \emp{civil status} of mother,
+\item \emp{Sex} and \emp{life length} of child,
+\item \emp{Multiple} birth (twin) mothers \emp{removed}.
+\end{itemize}  
+
+Saved in '\emp{fert.rda}'. 
+
+\end{frame}
+
+\begin{frame}{Data}
+
+First six (of \Sexpr{NROW(fert)}) rows of \code{fert}:  
+\scriptsize
+
+<<loading,results='asis',message=FALSE>>=
+library(knitr)
+library(xtable)
+load("fert.rda")
+fert$parity <- as.integer(fert$parity)
+fert$event <- as.integer(fert$event)
+x <- head(fert[, c("id", "birthdate", "parity", "enter",
+                   "exit", "event", "civst")])
+xtable(x, digits = 3)
+y <- head(fert[, c("id", "parity", "ch.id", "sex", "ch.exit")])
+xtable(y, digits = 3)
+@
+
+\end{frame}
+
+%% {\bf load} is the command to load a data file into the 'work space' of
+%% {\bf R}. {\bf xtable} is a function in the library \emph{xtable}, and {\bf
+%%   head} is a 
+%% function that returns a few (\emph{six} by default) lines from the top ('head')
+%% of a data frame. {\bf xtable} 'pretty-prints' the output (a matrix). 
+
+%% The variables are: {\bf id} is the DDB identification number, in this case
+%% for the mother. The data frame is organized by births for each woman and
+%% each row gives the start age (\emph{enter}) and stop age (\emph{exit}) for
+%% a time 
+%% interval between two births. Exceptions are the first and last intervals
+%% for each woman: the first interval starts at age 15 (approximately), and
+%% the last interval ends at age 50 (with no birth), or earlier, if the woman
+%% died or in some other way was lost to follow-up (we call it
+%% \emph{censoring}).    
+
+%% For example, the woman with id \Sexpr{x[1, 1]} is represented by five
+%% records (rows) in the data frame (that is what the variable {\bf antrec}
+%% says). In the first record, the variable {\bf parity} is zero, signifying
+%% that during this age interval ({\bf enter} to {\bf exit}), she has no
+%% children. At age  
+%% \Sexpr{round(x[1, 5], digits = 3)} she gives birth to a boy (seen in two
+%% ways, {\bf event} = 1 and {\bf sex = man}) with the DDB id ({\bf ch.id})
+%% \Sexpr{x[1, 8]}. 
+
+%% The variable {\bf event} takes three values, 0 = censoring, 1 = birth of a
+%% boy, and 2 = birth of a girl. I have removed all mothers with
+%% multiple births (twins, etc.), and also all mothers that come in (to
+%% Skellefteå) late (after age 15), as well as all mothers with too short
+%% intervals (less than nine  months) between births. All in all, we lose
+%% about five per cent of all mothers in this way. All this is done in order
+%% to avoid trivial complications when I illustrate the simple ideas in the
+%% analysis. 
+
+%% The variable {\bf birthdate} refers to \emph{mother's} birthdate, and the
+%% sample is (essentially) all women born between January 1, 1820 and December
+%% 31, 1869. Note that birthdate is given in \emph{decimal} form, where the
+%% decimal part is a fraction of a year. Dates are otherwise given in the form
+%% 'yyyymmdd' in the original DDB files, and there are two functions in the
+%% {\bf eha} package \citep{eha,ehar12} that transforms back and forth between
+%% the two formats.  
+
+\begin{frame}[fragile]{Tools for dates}
+  
+<<dates,echo=TRUE>>=
+library(eha)
+toDate(1867.669) ## But see the 'Date' class in  R!
+toTime("1867-09-02")
+library(skel14)
+tillTid(18670902)
+@
+
+\end{frame}
+
+
+%%And, as we see at the end, the function {\bf tillTid} in the package
+%%{\bf skel14}. The reason for having dates as numeric is of course that it
+%%makes mathematics involving dates easy. 
+
+\begin{frame}{The counting process approach}
+
+We define 
+
+\begin{equation*}
+\{N_i(t); \; 15 \le t \le 50, \; i \in \text{mother's id}\}
+\end{equation*}
+
+as the \emp{number of births before and including age $t$} for woman 
+No.~$i$. 
+
+\vspace{\baselineskip}
+
+$\emp{N_i(t)}, \; 15 \le t \le 50$, is called a \emp{counting process}.
+
+%%By age we mean \emph{exact age}, measured by a precision of a day, but with
+%%\emph{time unit year}. Thus $N_i$ are *counting processes* with jumps of size
+%%one (remember, no twin births) at the age of the mother at deliveries. For
+%%mother No. $160$ it looks like this (with the code producing the figure);
+%%see Figure~\ref{fig:countbir}. 
+
+\end{frame}
+
+\begin{frame}[fragile]{A realization}
+ 
+The counting process for \emp{woman with \code{id = 160}}:
+  
+<<countbir, fig.cap="Counting the number of births for mother with id = 160.">>=
+source("R/plotid.R")
+plotid(fert, 160)
+@
+
+$N(t)$ is a \emph{right-continuous} function, meaning essentially that at
+jump points, the value is the larger of the two possible values. $N(t-)$
+denotes its \emph{left-continuous} counterpart, that is, it is defined as the
+number of births up to but \emph{not including} age $t$. 
+
+\end{frame}
+
+
+\begin{frame}{External covariates}
+
+$N$ is a \emph{Poisson process} if
+
+\begin{equation*}
+h(t; x) = h_0(t) \exp(\beta x), \quad 0 \le t \le 50,
+\end{equation*}
+
+and $x$ is an external covariate, for instance {\bf birthdate} in our
+example. This is a \emph{proportional hazards model}  and it is
+easily estimated with any software capable of fitting a Cox regression
+model with data being \emph{left truncatated}. In {\bf R}, we can use the
+{\bf coxreg} function in the \emph{eha} package, which essentially is a
+wrapper for the {\bf coxph} function in the \emph{survival} package. 
+
+\end{frame}
+
+\begin{frame}[fragile]{Cox regression}
+  
+<<introcox,results='asis'>>=
+library(eha)
+fit <- coxreg(Surv(enter, exit, event > 0.5) ~ birthdate, 
+              data = fert)
+ltx(fit, caption = "A simple Cox regression.")
+@
+
+%% The interpretation of the estimated regression coefficient is that the
+%% birth intensity increases by 0.18 percent per year; not a very impressive
+%% amount, but statistically \emph{very significant}, mostly due to the large
+%% amount of births in our data. 
+
+\end{frame}
+
+\begin{frame}[fragile]{Robust Cox regression}
+
+
+\begin{itemize}  
+\item \emp{Standard
+errors and $p$-values are too optimistic}. 
+\item We need to do as follows
+  {\scriptsize
+\begin{verbatim}
+fit <- coxph(Surv(enter, exit, event > 0.5) ~ birthdate + 
+                 cluster(id), data = fert)
+\end{verbatim}
+
+}    
+\item The result is
+  
+{\scriptsize
+<<robust,results='asis'>>=
+fit <- coxph(Surv(enter, exit, event > 0.5) ~ birthdate + 
+                 cluster(id), data = fert)
+xtable(summary(fit)$coef, digits = 3)##$
+@
+
+}
+\item which gives exactly the \emp{same parameter estimate} as before, but a
+``robust'' 
+estimator of its standard error. 
+\item The \emp{$p$-value is larger} (because of
+that), but still it shows statistical significance. 
+
+\end{itemize}
+
+\end{frame}
+
+
+\begin{frame}[fragile]{Internal covariates}
+
+\begin{itemize}
+\item Internal covariates vary \emp{with each individual}. 
+\item They are typically \emp{time-varying},
+\item \code{civst} is a typical example. 
+  
+\item   The
+\emp{problem} 
+with internal covariates is that they may \emp{depend on the event status} of the
+process.
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}[fragile]{The 'cut' function}
+
+\emp{Categorize} the variable \code{birthdate}:
+
+<<period,echo = TRUE>>=
+fert$period <- cut(fert$birthdate, c(1820, 1850, 1870), 
+labels = c("first", "second"))
+x <- with(fert[fert$event > 0.5, ], table(period, sex))
+@ 
+
+The result is 
+<<outtable,results='asis'>>=
+xtable(x)
+@ 
+
+\end{frame}
+
+%%Then, an analysis with both {\bf period} and {\bf civst}, see 
+
+\begin{frame}[fragile]{Period and civil status, robust}
+
+  \scriptsize
+  
+\begin{verbatim}
+  
+fit <- coxph(Surv(enter, exit, event > 0.5) ~ period + civst + 
+                 cluster(id), data = fert)
+xtable(summary(fit)$coef, digits = 3)
+\end{verbatim}
+  
+<<cluster,results='asis'>>=
+fit <- coxph(Surv(enter, exit, event > 0.5) ~ period + civst + 
+                 cluster(id), data = fert)
+xtable(summary(fit)$coef, digits = 3)##$
+@
+
+\end{frame}
+
+\begin{frame}[fragile]{Verification of proportionality}
+
+What about the \emp{proportionality assumption}? Best is to look at it
+\emp{graphically}; first regarding \code{period} (loglog scale).
+
+<<propass>>=
+fit1 <- coxph(Surv(enter, exit, event > 0.5) ~ strata(period) + 
+                  civst, data = fert)
+plot(survfit(fit1), mark.time = FALSE, fun = "cloglog", 
+     col = c("red", "blue"), xlab = "Age")
+text(18, 0, "second period", col = "blue")
+text(30, -2, "first period", col = "red")
+@
+
+%%On this scale (``cloglog''), the curves should have a constant \emph{absolute}
+%%distance over time, if the \emph{PH} assumption holds. 
+
+\end{frame}
+
+\begin{frame}[fragile]{Test of proportionality}
+A formal test is
+available in \R: \code{cox.zph}.
+
+<<zph,results='asis'>>=
+xxx <- xtable(cox.zph(fit1)$table, digits  = 4)
+print(xxx)
+@ 
+
+\begin{itemize}
+\item The null hypothesis is ``The PH assumption is TRUE'', and 
+\item  the \emp{$p$-value} is
+effectively \emp{zero}, so it is safe to \emp{reject} the PH hypothesis.
+\end{itemize}
+
+However, from
+the graph it looks as if the deviation is \emp{not that severe}; remember that
+the \emp{number of births is huge}, so even small effects will be detected.  
+
+\end{frame}
+
+\begin{frame}[fragile]{Cumulative hazards on natural scale}
+
+<<natscale>>=
+plot(survfit(fit1), mark.time = FALSE, fun = "cumhaz", 
+     col = c("red", "blue"), xlim = c(15, 50), xlab = "Age", 
+     ylab = "Cumulative hazards")
+text(35, 2, "first period", col = "red")
+text(30, 3.5, "second period", col = "blue")
+abline(h = 0)
+@
+
+\end{frame}
+
+\begin{frame}[fragile]{Hazard functions}
+
+\begin{itemize}  
+\item A flexible \emp{parametric} model is satisfactory; the \emp{piecewise
+constant hazard model}. 
+\item Split the time interval $(15, 50])$ into 35
+  one-year-long sub-intervals and assume constant intensity within each
+  sub-interval.
+\end{itemize}  
+  
+\scriptsize
+\begin{verbatim}
+fit <- phreg(Surv(enter, exit, event > 0.5) ~ strata(period) + 
+                 civst, data = fert, dist = "pch", cuts = 16:49)
+plot(fit, ...
+
+\end{verbatim}
+
+\end{frame}
+
+\begin{frame}[fragile]{The graph}
+  
+<<strataperplot>>=
+fit <- phreg(Surv(enter, exit, event > 0.5) ~ strata(period) + 
+                 civst, data = fert, dist = "pch", cuts = 16:49)
+plot(fit, fn = "haz", col = c("red", "blue"), 
+     printLegend = FALSE, main = "",
+     xlab = "Age", ylab = "Hazard functions")
+legend("center", legend = c("first", "second"), 
+       col = c("red", "blue"), lty = 1:2)
+abline(h = 0)
+@
+
+Here the non-proportionality is \emp{easier to spot}.
+
+\end{frame}
+
+\begin{frame}[fragile]{Proportionality of civil status}
+  
+<<hazard>>=
+fit1 <- phreg(Surv(enter, exit, event > 0.5) ~ period + 
+                  strata(civst), data = fert, 
+              dist = "pch", cuts = 16:49)
+##summary(fit1)
+plot(fit1, fn = "haz", col = c("red", "blue"), 
+     printLegend = FALSE, main = "",
+     xlab = "Age", ylab = "Hazard functions")
+legend("center", legend = c("married", "unmarried"), 
+       col = c("red", "blue"), lty = 1:2)
+abline(h = 0)
+@
+
+Not that easy to judge the PH assumption from this plot. 
+
+\end{frame}
+
+\begin{frame}[fragile]
+
+Plot the \emp{ratio} between the two graphs:
+
+<<ratioplot>>=
+plot(15:49, fit1$hazards[2, ] / fit1$hazards[1, ], type = "l", 
+     xlab = "Age", ylab = "Hazard ratio", ylim = c(0, 1))
+abline(h = 0)
+abline(h = exp(fit$coef[1]), col = "blue", lty = 2)
+text(40, 0.3, "'PH estimate'", col = "blue")
+text(21, 0.5, "'Reality'")
+@
+
+\end{frame}
+
+\begin{frame}[fragile]{Dynamic covariates}
+
+  \begin{itemize}
+\item A \emp{subgroup} of the internal covariates: 
+\item  \emp{Direct functions} of the history of the \emp{process $N(t)$
+itself}, 
+\item for instance $N(t-)$, or '\code{time since last event}', etc.
+\item  The variable \code{parity} is \emp{exactly equal to $N(t-)$} for
+$\text{enter} < t \le \text{exit}$. 
+\item When including $N(t-)$ in the
+definition of the hazard function, it is \emp{not necessary} to use the 'robust'
+standard errors. 
+\item \emp{Not an issue in pure survival analysis!}
+  
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}[fragile]{Estimation with a dynamic covariate}
+  
+<<dynamic,results='asis'>>=
+fit1 <- coxph(Surv(enter, exit, event > 0.5) ~ parity + period, 
+              data = fert)
+xtable(summary(fit1)$coef, digits = 3)
+@
+
+Note how the inclusion of \code{parity} \emp{deflates the importance} of \code{
+  period}; without \code{parity} we have,
+
+<<nodynam,results='asis'>>=
+fit <- coxph(Surv(enter, exit, event > 0.5) ~ period, 
+             data = fert)
+xtable(summary(fit)$coef, digits = 3)
+@
+
+\end{frame}
+
+\begin{frame}[fragile]{Explanation}
+
+A \emp{natural} explanation: 
+
+\begin{itemize}
+\item The covariate \emp{\code{period} affects $N(t)$}, 
+\item  and then it is natural to think that this \emp{affection} also is there
+for \emp{earlier values of $N(t)$}, and especially $N(t-)$, 
+\item which in fact acts as
+an \emp{intermediate} covariate and \emp{``steals'' some of the effect} from
+\code{period}. 
+\end{itemize}
+
+So, if we are interested primarily of the effect of \emp{period},
+\emp{which} of the two models \emp{should we choose}? 
+
+\end{frame}
+
+
+\begin{frame}[fragile]{Which model?}
+
+\begin{itemize}  
+\item Probably the one \emp{without parity}; it
+gives you the \emp{crude} (total) effect (think 'sum of the direct and
+indirect effects'). 
+
+\item The covariate trajectory \emp{parity} \{($N(s-), \; 0 < s \le t$)
+  catches the \emp{dynamics} of the 
+counting process $N(t)$, that is, the dependence of its own past. 
+
+\item This is a
+way to \emp{model} the \emp{dependence} between the lengths of successive birth
+intervals for a woman: 
+\begin{itemize}
+\item From the beginning (at age 15), all women have the
+same probabilistic future.
+
+\item By chance, some get the first child early, while others will have to wait
+longer.
+\item If we assume that the intensity of giving birth is increased by 
+\Sexpr{round(100 * fit1$coef[1])}
+per cent at each birth, (as above), then the 'early-birds' will
+immediately get an advantage in the probability of getting many children. 
+\end{itemize}
+\end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{Simulation function}%$
+
+%% In the following example I am simulating a counting process with a constant
+%% intensity, but it is increased by 16 percent (or so) at each birth, similar
+%% to the model above. Besides that, this is {\bf not} a realistic model for
+%% fertility, but it is good enough (and simple!) to make a point. 
+\scriptsize
+<<simN, echo=TRUE>>=
+source("R/simN.R")
+simN
+@
+
+\end{frame}
+
+\begin{frame}[fragile]{Running the function}
+  
+<<runsimN>>=
+set.seed(101001) ## So we get the same result every time!
+x <- simN(silent = FALSE)
+@ 
+
+The simulation \emp{``chokes'' between 32 and 33} years of age.
+
+
+\end{frame}
+
+\begin{frame}[fragile]{Graphically, ten realizations} 
+
+<<dishonest, echo = FALSE>>=
+set.seed(10100)
+x <- simN()
+plot(x$ages, rep(1, length(x$ages)), type = "b", col = "blue", 
+     xlim = c(15, 50), ylim = c(0, 11), xlab = "Age", 
+     ylab = "Mother", axes = FALSE)
+axis(1)
+axis(2, at = 1:10)
+lines(c(15, 50), c(1, 1))
+box()
+for (i in 2:10){
+    x <- simN()
+    lines(x$ages, rep(i, length(x$ages)), type = "b", col = i)
+}
+@
+
+\end{frame}
+
+\begin{frame}[fragile]{The code}
+  
+\scriptsize
+\begin{verbatim}
+set.seed(10100)
+
+## First woman:
+x <- simN()
+plot(x$ages, rep(1, length(x$ages)), type = "b", col = "blue", 
+     xlim = c(15, 50), ylim = c(0, 11), 
+     xlab = "Age", ylab = "Mother", axes = FALSE)
+
+axis(1)
+axis(2, at = 1:10)
+box()
+
+## The rest (2, 3, ..., 10):
+
+for (i in 2:10){
+    x <- simN()
+    lines(x$ages, rep(i, length(x$ages)), type = "b", col = i)
+}
+
+\end{verbatim}
+
+\end{frame}  
+
+
+\begin{frame}[fragile]{Explanation}
+
+\begin{itemize}
+\item The process "chokes" with positive probability. So \emp{what is happening}? 
+
+\item The answer is that a model like 
+\begin{equation}
+h(t) = h_0(t) \exp\{\beta N(t-)\}, \quad t > 0
+\end{equation}
+is \emp{dishonest} (Aalen et al., 2008) if $\beta > 0$:
+\begin{itemize}
+  \item It will \emp{explode} in
+finite time with a positive probability.
+\item However, \emp{no problem} in \emp{estimation} with real data.
+%%\item The intensity is \emp{exponentially increasing}, and that is 'too fast'.  
+\end{itemize}
+\item Is there a way out of this? Yes, at least \emp{one}: 
+  
+  \begin{itemize}
+    \item \emp{Don't use} the model (with $\beta > 0$)!
+      
+\end{itemize}
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}[fragile]{Simulation with 'delay'}
+
+<<waitsim,echo=TRUE>>=
+set.seed(101001)
+x <- simN(wait = 0.75, silent = TRUE)
+@
+
+<<delays, fig.height = 3.5>>=
+plot(x$ages, rep(1, length(x$ages)), type = "b", col = "blue", 
+     xlim = c(15, 50), xlab = "Age", ylab = "Mother", axes = FALSE)
+axis(1)
+axis(2, at = 1)
+lines(c(15, 50), c(1, 1))
+box()
+@
+
+Honest, but is it \emp{realistic?}
+\end{frame}
+
+%% This situation is similar to, but not equal to, the problem with a Geiger
+%% counter having a "dead time", that is, after the arrival of an impulse, the
+%% counter is locked for a (short) time period, and impulses arriving too soon
+%% after another will not be counted. 
+
+\begin{frame}[fragile]{Estimation allowing for delay}
+
+%% Estimating the model with a nine month delay is straightforward; in
+%% principle, add 0.75 to to the {\bf enter} covariate. Some exceptions must be
+%% respected, though; the first intervals must be treated differently, and we
+%% must look up for other intervals that are shorter than 0.75 (notably the
+%%last). 
+ We introduce a \emp{new variable, \code{enter1}}
+
+ \scriptsize
+<<newenter,results='asis',echo=TRUE>>=
+fert$enter1 <- ifelse(fert$parity > 0.5, 
+                      pmin(fert$enter + 0.75, fert$exit - 0.001),
+                      fert$enter)
+## Checking ...
+xtable(head(fert[, c("id", "parity", "enter", "enter1", "exit")]), 
+       digits = 3)
+@
+
+Looks OK (so far...). 
+
+\end{frame}
+
+\begin{frame}[fragile]{Estimation with delay}
+
+<<newdata,results='asis'>>=
+fit2 <- coxph(Surv(enter1, exit, event > 0.5) ~ parity + period, 
+              data = fert)
+xtable(summary(fit2)$coef, digits = 3)
+@
+
+Put the coefficients from the two
+analyses together: 
+
+<<sametable,results='asis'>>=
+x <- cbind(exp(fit1$coef), exp(fit2$coef))
+colnames(x) <- c("No delay", "Delay")
+xtable(x, digits = 3)
+@
+
+Quite a \emp{substantial} change: The effect of \code{parity} is much \emp{stronger},
+while the effect of \code{period} is \emp{weaker}. 
+
+\end{frame}
+
+\begin{frame}[fragile]{Crude hazards with and without delay}
+
+
+<<crudehaz>>=
+f <- phreg(Surv(enter, exit, event > 0.5) ~ 1, dist = "pch", cuts = 16:49, 
+data = fert)
+f1 <- phreg(Surv(enter1, exit, event > 0.5) ~ 1, dist = "pch", cuts = 16:49, 
+            data = fert)
+plot(15:49, f1$hazards[1, ], type = "s", col = "blue", xlab = "Age", ylab = "Hazards")
+lines(15:49, f$hazards[1, ], type = "s", col = "red", lty = 1)
+abline(h = 0)
+legend("center", legend = c("Delay", "No delay"), col = c("blue", "red"), lty = c(1, 1))
+@ 
+
+\end{frame}
+
+\begin{frame}[fragile]{A frailty model approach}
+
+\begin{equation*}
+  \begin{split}
+    h(t; x_i) &= h_0(t) \exp(\beta x_i)\quad (\text{Poisson process}),\\
+    h(t; x_i) &= h_0(t) \exp(\beta x_i + \alpha N(t))\quad (\text{Dynamic covariate}),\\
+    h(t; x_i, Z_i) &= h_0(t) Z_i \exp(\beta x_i)\quad (\text{\emp{Frailty model}}),\\
+    \end{split}
+\end{equation*}
+
+%% The last results above concerning {\bf parity} are counterintuitive; I
+%% would expect to see \emph{decreasing} intensity of having another child with
+%% increasing parity. Maybe that effect is a consequence of the fact that this
+%% group of women is very non-homogeneous beyond what we can measure with
+%% covariates? If a subgroup of women have a very high fertility, then they
+%% would reach higher parities than the other women, and therefore when we
+%% observe a woman with a high parity, she probably belongs to the
+%% high-fertility group and thus is expected to have a short 'next interval'.  
+
+%% Since we cannot observe the factors that give rise to this in-homogeneity,
+%% we apply a random-effects ("frailty") model. Conditionally on the random
+%% effects, it is a PH model, mut since we cannot observe the random effect,
+%% it has to be integrated out. This results in a 'population model', i.e. an
+%% average over the individuals. In {\bf R} we can use the function {\bf coxme}
+%% from the package with the same name: 
+
+\begin{itemize}
+\item \emp{$\{Z_i, \; i \in \text{mothers}\}$} are assumed to be \emp{\emph{iid} random
+  variables}, 
+\item for instance with a \code{gamma} or \code{lognormal}
+distribution, 
+\item with \emp{mean one}.
+\end{itemize}
+  
+\end{frame}
+
+\begin{frame}[fragile]{Estimation with frailty}
+
+The package \code{coxme} is recommended (by me!):
+
+\scriptsize
+<<coxme,echo=TRUE>>=
+library(coxme)
+fit <- coxme(Surv(enter1, exit, event > 0.5) ~ period + parity + (1 | id), 
+data = fert)
+##fit
+@ 
+
+\end{frame}
+
+\begin{frame}[fragile]{Output from \code{coxme}}
+
+  \scriptsize
+  
+<<coxmeout>>=
+fit
+@  
+
+\end{frame}
+
+
+\begin{frame}[fragile]{Dynamic vs.\ frailty}
+
+  \begin{itemize}
+\item There is a very strong random effect
+(\emp{women are different!}). 
+\item Note also that the \emp{fixed effect} for \code{parity} still
+is  \emp{very strong}, but \emp{in the opposite direction!} 
+\begin{itemize}
+  \item That is, the \emp{correct direction}(?)
+\end{itemize}
+\end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{Stratification}
+
+\begin{itemize}
+\item An \emp{alternative} to the frailty model approach is to \emp{stratify} wrt \code{
+    id}. \emp{Risk:} Loss of power.
+  %%(This old concept has lately been reinvented by economists, who
+ %% call it a 'fixed effects model', thus redefining another old statistical
+ %% term!). 
+  \item Note that we then \emp{must} change time scale from \code{age} to \code{'time
+  since last event'}. 
+  \item A case can be made for \emp{excluding the first interval} from 15
+  to the first birth.   
+\item We \emp{cannot} have \code{birthdate} or \code{period} in the model, since they are
+\emp{constant within each stratum} (woman). 
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}[fragile]{Stratified analysis (code)}
+
+  \scriptsize
+<<strata, echo = TRUE>>=
+fert$age <- fert$enter - 30
+fert$age2 <- fert$age * fert$age
+fit <- coxreg(Surv(exit - enter1, event > 0.5) ~ age + age2 +  
+                  as.factor(parity) + strata(id), data = fert)
+dr <- drop1(fit, test = "Chisq")
+@ 
+
+(The warnings are due to very few observations with parity 15 and above.)
+
+\end{frame}
+
+%% Note the definition of {\bf age}! Continuous covariates should
+%% \emph{always} explicitly be \emph{centered}, especially if one wants to include
+%% powers or interactions in the model. Note also that $\text{age2} = \text{age} *
+%% \text{age}$. This function of age (a parabola) is not satisfactory, will be
+%% dealt with in Part II.
+
+\begin{frame}[fragile]{The parameter estimates}
+  \scriptsize
+<<sumstrata,results='asis'>>=
+##xtable(summary(fit)$coef, digits = 3, caption="Stratified Cox regression.", label = "tab:sumstrata")
+ltx(fit, dr = dr, digits = 4, caption="Stratified Cox regression.", label = "tab:sumstrata")
+@ 
+
+\end{frame}
+
+\begin{frame}[fragile]{The \code{parity} parameters}
+
+  \scriptsize
+<<plotsumstrata,echo=TRUE,fig.height=4>>=
+plot(0:16, c(0, fit$coef[-c(1, 2)]), type = "b", 
+     ylab = "Effect", xlab = "Parity")
+@
+
+
+Note that the effect of \code{parity} is \emp{almost linear}, \emp{except} for
+the first and last parities. 
+
+\end{frame}
+
+\begin{frame}[fragile]{Remove \code{parity} 16}
+
+<<remove16, fig.height = 4>>=
+fert <- fert[fert$parity < 15.5, ]
+plot(0:15, c(0, fit$coef[-c(1, 2, 18)]), type = "b", ylab = "log(Effect)", xlab = "Parity")
+@
+
+Two conclusions can be drawn: 
+
+\begin{enumerate}
+\item The time \emp{from age 15} to the first birth should be \emp{analyzed separately},
+
+\item \emp{Parity} can otherwise safely be treated as a \emp{linear covariate}.
+\end{enumerate}
+
+\end{frame}
+
+
+\begin{frame}[fragile]{Time to first birth}
+\footnotesize
+<<firstbirth,results='asis'>>=
+fit <- coxreg(Surv(enter, exit, event > 0.5) ~ period + civst, 
+             data = fert[fert$parity < 0.5, ])
+##xtable(summary(fit)$coef, digits = 3, caption="Time to first birth, Cox regression.", label = "tab:firstbirth")
+ltx(fit, digits = 3)
+@
+\begin{itemize}
+\item Here we are back to \emp{pure survival analysis}; no repeated events!
+\item Checks of proportionality show \emp{nothing} in particular. 
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}[fragile]{Later birth intervals, stratified}
+\footnotesize
+
+\begin{verbatim}
+fit <- coxreg(Surv(exit - enter1, event > 0.5) ~ age + age2 + 
+                 parity + strata(id), 
+             data = fert[fert$parity > 0.5, ])
+\end{verbatim}
+
+\emp{Note:} Arguments to \emp{\code{Surv}}!
+
+<<restbirths,results='asis'>>=
+fert$age2 <- fert$age^2
+fit <- coxreg(Surv(exit - enter1, event > 0.5) ~ age + age2 + 
+                 parity + strata(id), 
+             data = fert[fert$parity > 0.5, ])
+##xtable(summary(fit)$coef, digits = 4, caption="From first birth to last.", label = "tab:restbirths")
+ltx(fit, digits = 4)
+@
+
+\end{frame}
+
+%%Both the effects of {\bf age} and {\bf parity} are highly significant; the
+%%effects look like this (Figure~\ref{fig:figage}).
+\begin{frame}[fragile]{Effects in graphical form}
+  
+<<figage>>=
+x <- seq(15, 50, length = 1000)
+par(mfrow = c(1, 2))
+y <- 0:14
+plot(y, exp(fit$coef[3] * y), type = "b", xlab = "Parity", 
+     ylab = "Effect", axes = FALSE, col = "blue")
+axis(1, at = c(0, 4, 9), labels = c(1, 5, 10))
+axis(2, at = c(0, 0.5, 1))
+box()
+abline(h = 0)
+plot(x, exp((x - 30) * fit$coef[1] + (x - 30)^2 * fit$coef[2]), 
+     xlab = "Age", ylab = "Effect", type = "l", axes = FALSE, 
+     col = "blue")
+axis(1, at = c(15, 30, 50))
+axis(2, at = c(0, 0.5, 1.0, 1.4))
+box()
+abline(h = 0)
+lines(c(14, 30), c(1, 1), lty = 2)
+lines(c(30, 30), c(0, 1), lty = 2)
+par(mfrow = c(1, 1))
+@
+
+\end{frame}
+
+\begin{frame}[fragile]{Conclusion}
+
+  \begin{itemize}
+\item It is \emp{absolutely necessary} to adjust for the \emp{``unobserved 
+heterogeneity''} between mothers.
+
+\item To be continued.
+  
+\end{itemize}
+
+\end{frame}
+%%\bibliography{surv.bib}
+
+\end{document}
