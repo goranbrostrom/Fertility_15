@@ -1,0 +1,116 @@
+---
+title: "Fertility in Skellefteå, mothers born 1820--1869"
+author: "Göran Broström"
+date: '2015-02-03'
+output:
+  html_document:
+    fig_caption: yes
+  pdf_document:
+    fig_caption: yes
+---
+
+### Introduction
+
+The goal is to get a data file with fertility histories of women in Skellefteå. We are only interested in women born between 1 January, 1820 and 31 december 1869, and that gave birth to at least one child. So,
+
+```{r skel14}
+    library(eha)
+    library(skel14)
+    females <- person[with(person, KON == 2 & FODDAT > 18200000 & FODDAT < 18700000), ]
+    mothers <- females[females$ID %in% person$MID, ]
+    n.moth <- length(unique(mothers$ID))
+```
+
+So there are `r n.moth` mothers which we can have as a starting point. Let us now collect all kids to these mothers.
+```{r kids}
+infants <- person[person$MID %in% mothers$ID, ]
+n.infants <- length(unique(infants$ID))
+infants <- infants[order(infants$MID, infants$FODDAT), ]
+save(infants, file = "infants.rda")
+```
+
+Now, from this we make a file with *all births*, letting *id* be the id of the mother, and *ch_id* the id of the child.
+
+```{r births}
+indx <- match(infants$MID, mothers$ID)
+births <- data.frame(id = infants$MID, birthdate = mothers$FODDAT[indx], day = infants$FODDAT, parity = infants$PARITET_G, ch_id = infants$ID, sex = infants$KON, ab = infants$AB, df = infants$DF, fb = infants$FB)
+births  <- births[order(births$id, births$day), ] # Sorting by mother and birth order within mother
+save(births, file = "births.rda")
+n.births <- length(unique(births$ch_id))
+n.mothers <- length(unique(births$id))
+```
+
+Ok, we have `r n.births` births to these `r n.mothers` mothers (`r round(n.births / n.mothers, digits = 1)` births per mother on average). Let us look at what we have so far (the first rows of *births*):
+
+```{r head}
+head(births, n = 10)
+```
+
+The variables are: 
+
+*  **id**: Mother's id.
+*  **birthdate**: Mother's birthdate.
+*  **day**: This child's birthdate.
+*  **parity**: The birth order of the child (from source, *PARITET_G*, genererat bland biologiska barn till modern).
+*  **ch_id**: This child's id.
+*  **sex**: Sex of the child, 1 = 'boy', 2 = 'girl', 3 = 'hermaphrodite', 0 = 'unknown'.
+*  **ab**: Mother's civil status at delivery: 1 = 'married', 2 = 'unmarried', 3 = 'engaged', 0 = 'unknown'.
+*  **df**: Stillbirth? 0 = 'no', 1 = 'yes'.
+*  **fb**: Multiple birth: 1 = 'single (or unknown)', 2 = 'twin', 3 = 'triplet'.
+
+In order to get more informative summaries, we define some key variables as *factors*:
+
+```{r fack}
+births$id <- as.character(births$id)
+births$ch_id <- as.character(births$ch_id)
+births$sex  <- factor(births$sex, levels = c(1, 2, 3), labels = c("boy", "girl", "hermaphrodite"))
+births$ab <- factor(births$ab, levels = 1:3, labels = c("married", "unmarried", "engaged"))
+births$stillbirth <- factor(births$df, labels = c("no", "yes"))
+births$mult_birth <- factor(births$fb, levels = 1:3, labels = c("no", "twin", "triplet"))
+births$df <- births$fb <- NULL
+```
+
+Now, take a look at the result:
+
+```{r look}
+summary(births)
+```
+
+### Removing mothers with incomplete data
+
+Some mothers lack a birth date (only year is given), and we remove them from the data set. They are characterized by the fact that the fifth and sixth digits of *birthdate* are both zero. We can easily check for that utilizing the *mode* function and integer division.
+
+```{r mode}
+bda <- births$birthdate %/% 100
+weq <- bda %% 100 == 0
+id.weq <- unique(births$id[weq])
+
+births <- births[!(births$id %in% id.weq), ]
+n.newmr <- length(unique(births$id))
+summary(births)
+```
+
+After this, we are left with `r n.newmr` mothers, that is, `r n.mothers - n.newmr` left us. There are still mothers left with known birth month but unknown day within the month (two last digits are both zero). We keep them and let them have a birthdate in the middle of the month:
+
+```{r midmon}
+births$birthdate <- births$birthdate + 15 * (births$birthdate %% 100 == 0) # TRUE --> 1, FALSE --> 0.
+```
+
+Now we will create a new variable, **age**, which will be mother's age at the birth of each child. It is essentially the diference between *day* and *birthdate*, but first we must fix bad values in *day*, and then translate dates to (fractions of) years.
+
+Regarding the dates of child births, they are so essential, that we remove all mothers who have *any* bad *day* value. This includes mothers with *day = 0* and with the last two digits of *day* both equal to zero.
+
+```{r daysgone}
+id.weq <- unique(with(births, id[day %% 100 == 0]))
+births <- births[!(births$id %in% id.weq), ]
+n.bir <- length(unique(births$id))
+
+```
+
+After this operation, we are left with `r n.bir` mothers and lost `r n.newmr - n.bir`; not too bad. It remains to fix the *subtraction*:
+
+```{r subtract}
+births$age <- tillTid(births$day) - tillTid(births$birthdate)
+summary(births)
+save(births, file = "births.rda")
+```

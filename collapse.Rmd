@@ -1,0 +1,116 @@
+---
+title: "Cox regression and Simpson's paradox"
+author: "Göran Broström"
+date: '2015-01-12'
+output: html_document
+---
+
+## Non-collapsibility of the Cox regression model
+
+Suppose that we want to evaluate the effect of "born during a famine year" on infant mortality. We collect data on new-borns, note the state of the year (famine/normal) and gender (boy/girl), and follow them over time, until they die or reach the age one, whichever comes first. 
+
+We have 3000 girls and 3000 boys, and 3000 born during a famine and 3000 born during a normal year. Our data looks like this.
+
+```{r, echo=FALSE,message=FALSE}
+library(knitr)
+source("R/marg.R")
+dat <- marg()
+dat$sex <- factor(dat$sex, labels = c("boy", "girl"))
+dat$year <- factor(dat$year, labels = c("normal", "famine"))
+kable(head(dat[, -1]), align = NULL)
+```
+
+This is only the six first rows (obviously) of 6000. *exit* is age (in years) at death, if *event == TRUE*. If *event == FALSE*, the infant survived its first year (or until age *exit*, if less than one). Let us analyze the data with *Cox regression*. This is the result, with two covariates.
+
+```{r, echo=FALSE}
+library(eha)
+fit <- coxph(Surv(enter, exit, event) ~ year + sex, data = dat)
+kable(round(summary(fit)$coef, digits = 2))
+```
+
+So births during famine years are at a `r round((exp(fit$coef[1]) - 1) * 100)` per cent higher risk of dying; we have "controlled for" *sex*, but does it mean that the increase in risk is the same for boys and girls? No, generally it does not (*interaction*), but let's check by analyzing boys and girls separately.
+
+Boys:
+
+```{r, echo=FALSE}
+fit <- coxph(Surv(enter, exit, event) ~ year, data = dat[dat$sex == "boy", ])
+kable(round(summary(fit)$coef, digits = 2))
+```
+
+Girls:
+
+```{r, echo=FALSE}
+fit <- coxph(Surv(enter, exit, event) ~ year, data = dat[dat$sex == "girl", ])
+kable(round(summary(fit)$coef, digits = 2))
+```
+
+Great! If we compare the coefficients for *yearfamine* in the three analyses, we can see that they are almost identical. Does this mean that the effect of *year* on survival is independent of *sex*, so we actually can remove *sex* from the model? Let's see.
+
+Full data set but without the variable *sex*:
+
+```{r, echo=FALSE}
+fit <- coxph(Surv(enter, exit, event) ~ year, data = dat)
+kable(round(summary(fit)$coef, digits = 2))
+```
+
+Oh, what happened? Now the effect of famine years is *positive*, that is, to be born during a famine lowers your death risk by about `r round((1 - exp(fit$coef[1])) * 100)` per cent! And look at those *p*-values; no doubt about the fact that *born during a famine year* is really bad for boys and equally bad for girls, but at the same time is is very *beneficial for infants*.
+
+
+This is nothing but a version of *Simpson's paradox*. Before 'dwelving' into that one, let's look at it graphically.
+
+```{r, echo=FALSE}
+with(dat, plot(Surv(enter, exit, event), strata = strata(sex, year), printLegend=FALSE, col = c("blue", "blue", "red", "red"), lty = c(1,2,1,2)))
+legend("topleft", legend = c("boy, normal", "boy, famine", "girl, normal", "girl, famine"), lty = c(1,2,1,2), col = c("blue", "blue", "red", "red"))
+```
+
+Fine, nice proportional hazards. Let us plot the marginal model, without the covariate *sex*.
+
+```{r, echo=FALSE}
+with(dat, plot(Surv(enter, exit, event), strata = strata(year), printLegend=FALSE, col = c("black", "black"), lty = c(1,2)))
+legend("topleft", legend = c("normal", "famine"), lty = c(1,2), col = c("black","black"))
+```
+
+Looks like nice proportional hazards here too. (In fact, there is a small theoretical deviation from proportionality here; remember that this is simulated data, so I know the truth!)   
+
+A reason for this 'odd' result is the following:
+
+```{r, echo=FALSE}
+kable(with(dat, table(sex, year)))
+```
+
+Boys, who have a much lower mortality than girls (I know, I know, but remember, this is simulated data), also are more often than girls born during a famine. The bad effect of of being born during a famine is counterbalanced by being a boy, since most boys are bor during a famine, and most girls are born during normal years.
+
+In statistical lingo, *sex* is a *confounder*: It is correlated with both survival and 'born during a famine'. In other words, we cannot just ignore it, because then inevitably bias will present itself.
+
+For illustration, let us see what happens when the treatment--sex relation is reversed.
+
+```{r, echo=FALSE,message=FALSE}
+dat <- marg(c(2000, 1000, 1000, 2000))
+dat$sex <- factor(dat$sex, labels = c("boy", "girl"))
+dat$year <- factor(dat$year, labels = c("normal", "famine"))
+with(dat, plot(Surv(enter, exit, event), strata = strata(year), printLegend=FALSE, col = c("black", "black"), lty = c(1,2)))
+legend("topleft", legend = c("normal", "famine"), lty = c(1,2), col = c("black","black"))
+```
+
+Now the effect goes in the 'right' direction, but it is 'too large'.
+
+With a balanced treatment--sex relation we get
+
+```{r, echo=FALSE,message=FALSE}
+dat <- marg(c(1500, 1500, 1500, 1500))
+dat$sex <- factor(dat$sex, labels = c("boy", "girl"))
+dat$year <- factor(dat$year, labels = c("normal", "famine"))
+with(dat, plot(Surv(enter, exit, event), strata = strata(year), printLegend=FALSE, col = c("black", "black"), lty = c(1,2)))
+legend("topleft", legend = c("normal", "famine"), lty = c(1,2), col = c("black","black"))
+```
+
+This seems to be what we have the right to expect. In order to get the exact proportionality constant we run a Cox regression without 'sex'.
+
+```{r, echo=FALSE}
+fit <- coxph(Surv(exit, event) ~ year, data = dat)
+kable(round(summary(fit)$coef, digits = 2))
+```
+
+A little bit 'too small' but OK.
+
+Now for an explanation of *Simpson's paradox*; look [here]
