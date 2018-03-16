@@ -137,7 +137,7 @@ xtable(y, digits = 3)
 library(eha)
 toDate(1867.669) ## But see the 'Date' class in  R!
 toTime("1867-09-02")
-library(skel14)
+library(skel15)
 tillTid(18670902)
 @
 
