@@ -51,8 +51,8 @@ The variable **birthdate** refers to *mother's* birthdate, and the sample is (es
 library(eha)
 toDate(1867.669)
 toTime("1867-09-02")
-library(skel14)
-tillTid(18670902)
+##ibrary(skum)
+skum::tillTid(18670902)
 ```
 
 And, as we see at the end, the function *tillTid* in the package **skel14**. The reason for having dates as numeric is of course that it makes mathematics involving dates easy.

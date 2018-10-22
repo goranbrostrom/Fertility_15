@@ -120,12 +120,12 @@ the two formats.
 library(eha)
 toDate(1867.669)
 toTime("1867-09-02")
-library(skel14)
+library(skum)
 tillTid(18670902)
 @
 
 And, as we see at the end, the function {\bf tillTid} in the package
-{\bf skel14}. The reason for having dates as numeric is of course that it
+{\bf skum}. The reason for having dates as numeric is of course that it
 makes mathematics involving dates easy. 
 
 \section{The counting process approach}
@@ -138,7 +138,7 @@ We define
 
 as the \emph{number of births before and including age $t$} for woman No.\
 $i$. By age we mean \emph{exact age}, measured by a precision of a day, but with
-\emph{time unit year}. Thus $N_i$ are *counting processes* with jumps of size
+\emph{time unit year}. Thus $N_i$ are \emph{counting processes} with jumps of size
 one (remember, no twin births) at the age of the mother at deliveries. For
 mother No. $160$ it looks like this (with the code producing the figure);
 see Figure~\ref{fig:countbir}. 
@@ -264,7 +264,7 @@ We would like to look at the \emph{hazard functions} (instead of the
 complicated so-called \emph{kernel} methods. However, with this huge amount of
 data, a flexible \emph{parametric} model is satisfactory; the \emph{piecewise
 constant hazard model}. We split the time interval $(15, 50])$ into 35
-  on-year-long sub-intervals and assume constant intensity within each
+  one-year-long sub-intervals and assume constant intensity within each
   sub-interval. Like this: 
 
 <<strataper>>=
@@ -334,7 +334,7 @@ standard errors, see Table~\ref{tab:dynamic}.
 <<dynamic,results='asis'>>=
 fit1 <- coxph(Surv(enter, exit, event > 0.5) ~ parity + period, 
               data = fert)
-xtable(summary(fit1)$coef, digits = 3, caption = "Cox regression with the dynamic covariate parity and teh external covariate period.", label = "tab:dynamic")
+xtable(summary(fit1)$coef, digits = 3, caption = "Cox regression with the dynamic covariate parity and the external covariate period.", label = "tab:dynamic")
 @
 
 Note how the inclusion of {\bf parity} deflates the importance of {\bf
@@ -496,7 +496,7 @@ high-fertility group and thus is expected to have a short 'next interval'.
 
 Since we cannot observe the factors that give rise to this in-homogeneity,
 we apply a random-effects ("frailty") model. Conditionally on the random
-effects, it is a PH model, mut since we cannot observe the random effect,
+effects, it is a PH model, but since we cannot observe the random effect,
 it has to be integrated out. This results in a 'population model', i.e. an
 average over the individuals. In {\bf R} we can use the function {\bf coxme}
 from the package with the same name: 
@@ -509,8 +509,8 @@ fit
 @ 
 
 From the output it is clear that there is a very strong random effect
-(women are different!). Note also tha the fixed effect for {\bf parity} now
-is still very strong, but *in the opposite direction*! That is, the
+(women are different!). Note also that the fixed effect for {\bf parity} now
+is still very strong, but {\bf in the opposite direction!} That is, the
 direction our (my?) intuition says. 
 
 \section{Stratification}
