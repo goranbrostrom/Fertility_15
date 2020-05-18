@@ -4,9 +4,11 @@ author: "Göran Broström"
 date: '2015-01-12'
 output: html_document
 ---
-
+<!--
 ## Non-collapsibility of the Cox regression model
 
+Not really about non-collapsibility, but close.
+-->
 Suppose that we want to evaluate the effect of "born during a famine year" on infant mortality. We collect data on new-borns, note the state of the year (famine/normal) and gender (boy/girl), and follow them over time, until they die or reach the age one, whichever comes first. 
 
 We have 3000 girls and 3000 boys, and 3000 born during a famine and 3000 born during a normal year. Our data looks like this.
@@ -59,14 +61,16 @@ Oh, what happened? Now the effect of famine years is *positive*, that is, to be 
 This is nothing but a version of *Simpson's paradox*. Before 'dwelving' into that one, let's look at it graphically.
 
 ```{r, echo=FALSE}
-with(dat, plot(Surv(enter, exit, event), strata = strata(sex, year), printLegend=FALSE, col = c("blue", "blue", "red", "red"), lty = c(1,2,1,2)))
+fit <- coxreg(Surv(enter, exit, event) ~ strata(sex, year), data = dat)
+plot(fit, printLegend=FALSE, col = c("blue", "blue", "red", "red"), lty = c(1,2,1,2))
 legend("topleft", legend = c("boy, normal", "boy, famine", "girl, normal", "girl, famine"), lty = c(1,2,1,2), col = c("blue", "blue", "red", "red"))
 ```
 
 Fine, nice proportional hazards. Let us plot the marginal model, without the covariate *sex*.
 
 ```{r, echo=FALSE}
-with(dat, plot(Surv(enter, exit, event), strata = strata(year), printLegend=FALSE, col = c("black", "black"), lty = c(1,2)))
+fitm <- coxreg(Surv(enter, exit, event) ~ strata(year), data = dat)
+plot(fitm, printLegend=FALSE, col = c("black", "black"), lty = c(1,2))
 legend("topleft", legend = c("normal", "famine"), lty = c(1,2), col = c("black","black"))
 ```
 
@@ -88,7 +92,8 @@ For illustration, let us see what happens when the treatment--sex relation is re
 dat <- marg(c(2000, 1000, 1000, 2000))
 dat$sex <- factor(dat$sex, labels = c("boy", "girl"))
 dat$year <- factor(dat$year, labels = c("normal", "famine"))
-with(dat, plot(Surv(enter, exit, event), strata = strata(year), printLegend=FALSE, col = c("black", "black"), lty = c(1,2)))
+fit <- coxreg(Surv(enter, exit, event) ~ strata(year), data = dat)
+plot(fit, printLegend=FALSE, col = c("black", "black"), lty = c(1,2))
 legend("topleft", legend = c("normal", "famine"), lty = c(1,2), col = c("black","black"))
 ```
 
@@ -100,7 +105,8 @@ With a balanced treatment--sex relation we get
 dat <- marg(c(1500, 1500, 1500, 1500))
 dat$sex <- factor(dat$sex, labels = c("boy", "girl"))
 dat$year <- factor(dat$year, labels = c("normal", "famine"))
-with(dat, plot(Surv(enter, exit, event), strata = strata(year), printLegend=FALSE, col = c("black", "black"), lty = c(1,2)))
+fit <- coxreg(Surv(enter, exit, event) ~ strata(year), data = dat)
+plot(fit, printLegend=FALSE, col = c("black", "black"), lty = c(1,2))
 legend("topleft", legend = c("normal", "famine"), lty = c(1,2), col = c("black","black"))
 ```
 
@@ -113,4 +119,6 @@ kable(round(summary(fit)$coef, digits = 2))
 
 A little bit 'too small' but OK.
 
+<!--
 Now for an explanation of *Simpson's paradox*; look [here]
+-->

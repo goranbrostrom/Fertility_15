@@ -30,7 +30,9 @@
 <<setup, include = FALSE>>=
 library(knitr)
 opts_chunk$set(engine='R',dev='pdf',fig.path='figs/slide1-',tidy=FALSE,fig.height=5.5,fig.width=8,strip.white=TRUE,cache=TRUE,echo=TRUE,message=FALSE)##$
-load("fert.rda")
+con <- url("http://ehar.se/data/fert.rda")
+load(con)
+close(con)
 @
 
 Generally,
@@ -68,12 +70,15 @@ But here \emp{somewhat less}.
 
   \scriptsize
 <<skel14>>=
-    library(skel14) # Data for Skellefteå, from POPLINK.
+    if(!require(skel14)){
+      stop("Package skel14 does not exist.")
+    }
     females <- person[with(person, KON == 2 & 
                                FODDAT > 18200000 & 
                                FODDAT < 18700000), ]
     mothers <- females[females$ID %in% person$MID, ]
     (n.moth <- length(unique(mothers$ID))) # 'unique' not necessary here.
+    
 @
 
 \end{frame}

@@ -64,7 +64,9 @@ signals that the data format is the R 'native' data format.
 <<loading,results='asis',message=FALSE>>=
 library(knitr)
 library(xtable)
-load("fert.rda")
+con <- url("http://ehar.se/data/fert.rda")
+load(con)
+close(con)
 fert$parity <- as.integer(fert$parity)
 fert$event <- as.integer(fert$event)
 x <- head(fert[, c("id", "birthdate", "parity", "enter",

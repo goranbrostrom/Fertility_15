@@ -1,9 +1,12 @@
 ---
 title: "Repeated events and dynamic covariates II"
 author: "Göran Broström"
-date: 2018-10-19
-categories: ["R"]
-tags: ["R Markdown", "fertility"]
+date: '2018-10-19'
+output: pdf_document
+tags:
+- R Markdown
+- fertility
+categories: R
 ---
 
 ## Introduction
@@ -27,8 +30,9 @@ We are only keeping those women who have had no births before marriage, that is,
 
 ```{r, echo=FALSE}
 library(knitr)
-load("fert.rda")
-##load("../../static/data/fert.rda")
+con <- url("http://ehar.se/data/fert.rda")
+load(con)
+close(con)
 mar <- fert[fert$civst == "married", ]
 x <- tapply(mar$parity, mar$id, min)
 x <- x[x == 0]
@@ -203,7 +207,7 @@ fit <- phreg(Surv(enter, exit, event > 0.5) ~ strata(period) + birthdate + mar1_
 summary(fit)
 plot(fit, fn = "haz", col = c("red", "blue"), printLegend = FALSE, main = "",
      xlab = "Age", ylab = "Hazard functions")
-legend("center", legend = c("first", "second"), col = c("red", "blue"), lty = 1:2)
+legend("topright", legend = c("first", "second"), col = c("red", "blue"), lty = 1:2)
 abline(h = 0)
 ```
 
@@ -337,7 +341,7 @@ f1 <- phreg(Surv(enter1, exit, event > 0.5) ~ 1, dist = "pch", cuts = 1:25, data
 plot(0:25, f1$hazards[1, ], type = "s", col = "blue", xlab = "Age", ylab = "Hazards")
 lines(0:25, f$hazards[1, ], type = "s", col = "red", lty = 2)
 abline(h = 0)
-legend("center", legend = c("Delay", "No delay"), col = c("blue", "red"), lty = 1:2)
+legend("topright", legend = c("Delay", "No delay"), col = c("blue", "red"), lty = 1:2)
 ```
 
 Quite a substantial change in the "mid-ages".
@@ -354,17 +358,20 @@ fit <- coxme(Surv(enter1, exit, event > 0.5) ~ period + parity + (1 | id), data 
 fit
 ```
 
-From the output it is clear that there is a very strong random effect (women are different!). Note also tha the fixed effect for **parity** now is still very strong, but *in the opposite direction*! That is, the direction our (my?) intuition says.
+From the output it is clear that there is a very strong random effect (women are different!). Note also that the fixed effect for **parity** now is still very strong, but *in the opposite direction*! That is, the direction our (my?) intuition says.
+
+<!--
+
+NOTE: This section contains errors!
 
 ## Stratification
 
-<!--
 An alternative to the frailty model approach is to *stratify* wrt **id** (This old concept has lately been reinvented by economists, who call it a 'fixed effects model', thus redefining another old statistical term!). Note that we then *must* change time scale from age to 'time since last event'. A case can be made for excluding the interval from 15 to the first birth; we check both variants.  
 We cannot have 'birthdate' or 'period' in the model, since they are constant within each stratum (woman).
 
-```{r strata,eval = FALSE}
+```{r strata,eval = TRUE}
 fert$age <- fert$mar1 - 30 ## NOTE!!
-fit <- coxph(Surv(exit - enter1, event > 0.5) ~ age + I(age^2) + as.factor(parity) + strata(id), data = fert)
+fit <- coxph(Surv(exit - enter1, event > 0.5) ~  as.factor(parity) + strata(id), data = fert)
 ```
 
 Note the definition of **age**! Continuous covariates should *always* explicitly be *centered*, especially if one wants to include powers or interactions in the model.
@@ -430,6 +437,7 @@ lines(c(14, 30), c(1, 1), lty = 2)
 lines(c(30, 30), c(0, 1), lty = 2)
 par(mfrow = c(1, 1))
 ```
-
+-->
+<!--
 (To be continued.)
 -->

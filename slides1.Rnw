@@ -32,7 +32,9 @@
 <<setup, include = FALSE>>=
 library(knitr)
 opts_chunk$set(engine='R',dev='pdf',fig.path='figs/slide1-',tidy=FALSE,fig.height=5.5,fig.width=8,strip.white=TRUE,cache=TRUE,echo=FALSE,message=FALSE)##$
-load("fert.rda")
+con <- url("http://ehar.se/data/fert.rda")
+load(con)
+close(con)
 @
 
 Generally,
@@ -77,7 +79,7 @@ First six (of \Sexpr{NROW(fert)}) rows of \code{fert}:
 <<loading,results='asis',message=FALSE>>=
 library(knitr)
 library(xtable)
-load("fert.rda")
+##load("fert.rda")
 fert$parity <- as.integer(fert$parity)
 fert$event <- as.integer(fert$event)
 x <- head(fert[, c("id", "birthdate", "parity", "enter",
@@ -130,18 +132,6 @@ xtable(y, digits = 3)
 %% 'yyyymmdd' in the original DDB files, and there are two functions in the
 %% {\bf eha} package \citep{eha,ehar12} that transforms back and forth between
 %% the two formats.  
-
-\begin{frame}[fragile]{Tools for dates}
-  
-<<dates,echo=TRUE>>=
-library(eha)
-toDate(1867.669) ## But see the 'Date' class in  R!
-toTime("1867-09-02")
-library(skel15)
-tillTid(18670902)
-@
-
-\end{frame}
 
 
 %%And, as we see at the end, the function {\bf tillTid} in the package
