@@ -1,0 +1,608 @@
+
+\usepackage{amsmath}
+\usepackage{amssymb}
+%\usepackage{natbib}
+
+%\usepackage[figuresonly]{endfloat}
+
+%\bibliographystyle{apalike}
+
+\usepackage{color}
+
+\newcommand{\emp}[1]{\textcolor{blue}{#1}}
+
+\usetheme{Singapore}% best choice.
+  \setbeamercovered{transparent}%
+
+\newcommand{\R}{{\bf R}}
+\newcommand{\code}[1]{{\tt #1}}
+
+\title{Repeated events and dynamic covariates,\\ Part II}
+\author{Göran Broström}
+\date{February 25, 2015}
+
+\begin{document}
+
+\maketitle
+
+\begin{frame}{Fertility}
+
+<<setup, include = FALSE>>=
+library(knitr)
+opts_chunk$set(engine='R',dev='pdf',fig.path='figs/slide1-',tidy=FALSE,fig.height=5.5,fig.width=8,strip.white=TRUE,cache=TRUE,echo=TRUE,message=FALSE)##$
+load("fert.rda")
+@
+
+Generally,
+
+\begin{itemize}
+\item Fertility data (\emp{repeated events data})
+are discussed. 
+\item Fertility histories
+collected in a dynamic way, 
+
+\item Information of each birth in terms
+of sex of child, stillbirth, mother's civil status, socioeconomic status,  
+etc. 
+
+\item Links to husband and parents (but not here).
+
+\end{itemize}
+
+But here \emp{somewhat less}.
+\end{frame}
+
+\begin{frame}{DDB, Skellefteå Data}
+
+\begin{itemize}
+\item Women born \emp{1821--1870},
+\item Exact age at deliveries,
+\item \emp{Birthdate} and \emp{civil status} of mother,
+\item \emp{Sex} of child, sex composition.
+\item \emp{Multiple} birth (twin) mothers \emp{kept}, but only one record per birth.
+\end{itemize}  
+
+\end{frame}
+
+\begin{frame}[fragile]{Data, mothers}
+
+  \scriptsize
+<<skel14>>=
+    library(skel14) # Data for Skellefteå, from POPLINK.
+    females <- person[with(person, KON == 2 & 
+                               FODDAT > 18200000 & 
+                               FODDAT < 18700000), ]
+    mothers <- females[females$ID %in% person$MID, ]
+    (n.moth <- length(unique(mothers$ID))) # 'unique' not necessary here.
+@
+
+\end{frame}
+
+\begin{frame}[fragile]{Data, children}
+
+  {\scriptsize
+<<kids>>=
+infants <- person[person$MID %in% mothers$ID, ]
+(n.infants <- length(unique(infants$ID)))
+infants <- infants[order(infants$MID, infants$FODDAT), ]
+@
+
+}
+Make a file with \emp{all births}, where 
+\begin{itemize}
+\item \emp{id} is the id of the \emp{mother}, 
+\item and \emp{ch{\_}id} the id of the \emp{child}.
+\end{itemize}
+
+\end{frame}
+
+
+\begin{frame}[fragile]{Births}
+  
+\scriptsize
+
+<<births>>=
+indx <- match(infants$MID, mothers$ID) ## Remember 'match'!
+births <- data.frame(id = infants$MID, 
+                     birthdate = mothers$FODDAT[indx], 
+                     day = infants$FODDAT, 
+                     parity = infants$PARITET_G, 
+                     ch.id = infants$ID, 
+                     sex = infants$KON, 
+                     ab = infants$AB, 
+                     df = infants$DF, 
+                     fb = infants$FB)
+## Sort by mother and birth order within mother:
+births  <- births[order(births$id, births$day), ] 
+(n.births <- length(unique(births$ch.id)))
+(n.mothers <- length(unique(births$id)))
+@
+
+\end{frame}
+
+\begin{frame}[fragile]{First rows of births}
+
+%  {\scriptsize
+  {\footnotesize
+
+<<head>>=
+head(births, 10)
+@
+
+}
+\emp{Note} the \emp{twins}!
+\end{frame}
+
+\begin{frame}{Variables}
+
+The variables are: 
+
+\scriptsize
+\begin{description}
+\item[id]: Mother's id.
+\item[birthdate]: Mother's birthdate.
+\item[day]: This child's birthdate.
+\item[parity]: The birth order of the child 
+\item[ch.id]: This child's id.
+\item[sex]: Sex of the child, 1 = 'boy', 2 = 'girl', 3 = 'hermaphrodite', 0 = 'unknown'.
+\item[ab]: Mother's civil status at delivery: 1 = 'married', 2 = 'unmarried', 3 = 'engaged', 0 = 'unknown'.
+\item[df]: Stillbirth? 0 = 'no', 1 = 'yes'.
+\item[fb]: Multiple birth: 1 = 'single (or unknown)', 2 = 'twin', 3 = 'triplet'.
+\end{description}
+
+\end{frame}
+
+\begin{frame}[fragile]{Defining factors} 
+
+\scriptsize
+
+<<fack>>=
+## births$id <- as.character(births$id) 
+## Dangerous!! (sorting...) A note to self...
+##births$ch_id <- as.character(births$ch_id)
+births$sex  <- factor(births$sex, levels = c(1, 2, 3), 
+                      labels = c("boy", "girl", "hermaphrodite"))
+births$ab <- factor(births$ab, levels = 1:3, 
+                    labels = c("married", "unmarried", "engaged"))
+births$stillbirth <- factor(births$df, 
+                            labels = c("no", "yes"))
+births$mult_birth <- factor(births$fb, levels = 1:3, 
+                            labels = c("no", "twin", "triplet"))
+births$df <- births$fb <- NULL
+@
+
+\end{frame}
+
+
+\begin{frame}[fragile]{Summary so far}
+
+\scriptsize
+
+<<look>>=
+summary(births)
+@
+
+\end{frame}
+
+\begin{frame}[fragile]{Mothers with incomplete data}
+
+<<mode>>=
+bda <- births$birthdate %/% 100
+weq <- bda %% 100 == 0 # Only year is known
+id.weq <- unique(births$id[weq])
+## Remove:
+births <- births[!(births$id %in% id.weq), ]
+## Modify:
+births$birthdate <- births$birthdate + 
+    15 * (births$birthdate %% 100 == 0) 
+## TRUE --> 1, FALSE --> 0.
+@
+
+\end{frame}
+
+\begin{frame}[fragile]{Mothers with bad child birth data}
+\ldots must be removed \ldots
+
+<<daysgone>>=
+id.weq <- unique(with(births, id[day %% 100 == 0]))
+(ant <- length(id.weq))
+births <- births[!(births$id %in% id.weq), ]
+@
+
+So \Sexpr{ant} mothers were excluded.
+\end{frame}
+
+
+\begin{frame}[fragile]{Mother's age at child births}
+  
+\scriptsize
+
+A new variable, \emp{age}, mother's age at the birth of each child, is created.
+
+<<subtract>>= 
+births$age <- tillTid(births$day) - tillTid(births$birthdate)
+summary(births[, c("parity", "sex", "ab", "stillbirth", "age", "mult_birth")])
+@
+
+\end{frame}
+
+
+\begin{frame}[fragile]{Annoyances}
+\footnotesize
+\begin{itemize}
+\item Some annoyances left, the missing values.
+  \begin{itemize}
+\item   Missing on \emp{sex} is strongly connected to \emp{stillbirth}:
+\end{itemize}
+\end{itemize}
+
+<<tablesexstill>>=
+with(births, table(stillbirth, sex, useNA = "ifany"))
+@
+
+Identify those women who have births without gender, but not stillbirth:
+
+<<stillsex>>=
+mid <- births$id[births$stillbirth == "no" & 
+                     is.na(births$sex)]
+@
+
+\emp{Remove those mothers} (and their births) from the data file:
+
+<<removemoth>>=
+births <- births[!(births$id %in% mid), ]
+@ 
+
+\end{frame}
+
+\begin{frame}{Cleaning}
+Some \emp{cleaning} is performed: 
+
+\begin{itemize}
+\item  There are \emp{no hermaphrodites}, so that category is removed,
+
+\item Those with \emp{missing mult{\_}birth} are assumed to be \emp{no multiple
+    birth}.
+
+\item  For \emp{ab}, we assume that \emp{missing} and \emp{engaged} are regarded as \emp{married}.
+\end{itemize}
+
+\end{frame}
+
+
+\begin{frame}[fragile]{The cleaning}
+  \scriptsize
+<<herma>>=
+births$sex <- factor(births$sex)
+births$mult_birth[is.na(births$mult_birth)] <- "no"
+births$ab[is.na(births$ab)] <- "married"
+births$ab[births$ab == "engaged"] <- "married"
+births$ab <- factor(births$ab)
+births <- births[order(births$id, births$age), ] ## New, does it help??
+@
+
+\end{frame}
+
+\begin{frame}[fragile]{The result}
+\scriptsize  
+<<showr, echo=FALSE>>=
+summary(births[, c("parity", "sex", "ab", "mult_birth", "age")])
+@ 
+Only two \emp{disturbing facts} are left now; can you \emp{spot them}?
+
+
+\end{frame}
+
+\begin{frame}[fragile]{Disturbing facts}
+
+\begin{enumerate}
+\item The number of twins is an \emp{odd number}, it should be even, and
+
+\item At least one mother is \emp{above 57 years of age} at a birth. And
+  one is \emp{below 12}. 
+
+\end{enumerate}
+
+\end{frame}
+
+\begin{frame}[fragile]{Sorting and locale}
+  
+Sorting text (\emp{locale} dependent!) and sorting numbers are different things:
+
+<<sorting>>=
+x <- c(1, 2, 10, 21, 3)
+sort(x)
+(y <- as.character(x))
+sort(y)
+@ 
+
+\end{frame}
+
+
+\begin{frame}[fragile]{tapply and order}
+  \scriptsize
+<<tappord>>=
+(dat <- data.frame(x = sample(9, size = 5),
+                  y = c(1, 2, 2, 1, 1)))
+(rr <- with(dat, tapply(x, y, cumsum)))
+@   
+
+\end{frame}
+
+\begin{frame}[fragile]{Put cumsum on dat}
+  
+<<putoncum>>=
+y <- as.factor(dat$y)
+z <- numeric(NROW(dat))
+for (i in levels(y)){
+    z[y == i] <- rr[[i]]
+}
+dat$z <- z
+dat
+@  
+
+\end{frame}
+
+\begin{frame}[fragile]{Simpler tapply}
+  \ldots but \emp{dangerous} \ldots
+\scriptsize 
+<<simpta>>=
+dat$y <- as.factor(dat$y)
+(dat2 <- dat[order(dat$y), ])
+dat2$z <- unlist(with(dat2, tapply(x, y, cumsum)))
+dat2
+@ 
+
+\end{frame}
+
+\begin{frame}[fragile]{Put on scalar}
+\footnotesize  
+<<pscal>>=
+(indx <- with(dat, tapply(y, y)))
+(z <- with(dat, tapply(x, y, mean)))
+dat$z <- z[indx]
+dat
+@ 
+
+\end{frame}
+
+
+\begin{frame}[fragile]{Multiple births}
+\scriptsize
+The twin births:
+
+<<twinbirths>>=
+mtw <- with(births, tapply(mult_birth == "twin", id, sum))
+(xx <- table(mtw))
+@
+
+
+Let's have a look at those having three twins:
+
+
+<<twinmothers>>=
+(mtw3 <- mtw[mtw == 3])
+@
+
+\end{frame}
+
+\begin{frame}[fragile]{Mother with three twins}
+  
+The births for the first mother, id = \Sexpr{names(mtw3)[1]}, are
+
+{\footnotesize
+
+<<fmor>>=
+births[births$id %in% names(mtw3)[1], 
+       c("id", "parity", "sex", "mult_birth", "age", "stillbirth")]
+@
+
+}
+\begin{itemize}
+\item Obviously, the second row is a twin; 
+\item not registered as such because his twin
+brother died? 
+\end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{Twin info not reliable}
+  
+The variable \emp{mult{\_}birth} is thus not quite reliable (for our purposes).
+
+Alternatives are \emp{age} and \emp{parity}. Ned to check these, are they
+increasing for each mother? 
+\scriptsize
+<<inc>>==
+source("R/is.inc.R")
+is.inc
+@ 
+
+\end{frame}
+
+\begin{frame}[fragile]{Parity and age}
+
+\footnotesize  
+Is \emp{parity} increasing?
+<<parityinc>>=
+xx <- with(births, tapply(parity, id, is.inc))
+table(xx)
+@
+
+Is \emp{age} increasing?
+<<age>>=
+xx <- with(births, tapply(age, id, is.inc))
+table(xx)
+@
+
+OK for both.
+\end{frame}
+
+\begin{frame}[fragile]{New definition of multiple birth}
+\tiny
+If the difference in birth dates is \emp{less than one week} (approximately \emp{0.02 years}), it is a twin or triplet birth.
+<<mult>>=
+source("R/mult.R")
+mult
+@
+\end{frame}
+
+\begin{frame}[fragile]{Applying 'mult'}
+\scriptsize
+<<multi>>=
+births$multi <- unlist(with(births, tapply(age, id, mult)))
+head(births[, c("id", "parity", "stillbirth", "mult_birth", "multi")], 7)
+with(births, table(multi, mult_birth, useNA = "ifany"))
+births$mult_birth[births$id == 823500 & births$parity == 6] <- "triplet" ## Correct a booking error
+@
+
+\end{frame}
+
+\begin{frame}[fragile]{Sex distribution}
+
+Cumulative numbers of \emp{girls} and \emp{boys} (surviving birth) for each
+  woman:  
+
+\footnotesize
+<<sex>>=
+boy <- births$sex == "boy" & births$stillbirth == "no"
+girl <- births$sex == "girl" & births$stillbirth == "no"
+births$boys <- unlist(tapply(boy, births$id, cumsum))
+births$girls <- unlist(tapply(girl, births$id, cumsum))
+@
+
+\end{frame}
+
+\begin{frame}[fragile]{Make one record of multiple births}
+
+\scriptsize  
+<<remtrtw>>=
+weq <- with(births, (multi == 1) | ((multi == 2) & 
+                                        (mult_birth == "triplet")))
+births <- births[!weq, ]
+rownames(births) <- 1:NROW(births)
+head(births[, c(1, 4, 6, 9, 10, 11, 12, 13)], 10)
+@
+
+\end{frame}
+
+
+\begin{frame}[fragile]{Add enter, exit, event}
+
+\begin{itemize}
+\item Three women gave birth at ages above 50, the oldest was 57.
+\item Remove the three intervals with enter $\text{age} \ge 50$. They all end with \emp{no birth}.
+\end{itemize}  
+\scriptsize
+<<entex>>=
+births$enter <- births$age
+births$exit <- c(births$age[-1], 50)
+births <- rc(births) # Adds 'antrec' and 'lopnr' to 'births'.
+head(births[, c("id", "age", "enter", "exit", "lopnr", "antrec")])
+births$exit[births$antrec == births$lopnr] <- 50 ## NOTE row 5 above!
+births$event <- with(births, antrec != lopnr)
+births <- births[births$enter < 50, ]
+@
+
+\end{frame}
+
+
+\begin{frame}[fragile]{Get mother's ``last seen'' age}
+
+We need to replace $\text{exit} = 50$ with a \emp{real} exit age; We fetch
+it from the \emp{person} data frame: 
+
+\scriptsize
+<<getperson>>=
+lastseen <- person$UTDATMIN[match(births$id, person$ID)]
+births$m.exit <- tillTid(lastseen) - tillTid(births$birthdate)
+head(births[, c("id", "age", "exit", "m.exit", "lopnr", "antrec")], 3)
+summary(births[, c("age", "exit", "m.exit")])
+with(births, sum(!is.na(m.exit) & (exit > m.exit)))
+@
+
+\end{frame}
+
+\begin{frame}[fragile]{With UTDATMAX instead}
+  
+Errors in the raw data file; UTDATMIN is not reliable.
+
+{\scriptsize
+<<getpersonMAX>>=
+lastseen <- person$UTDATMAX[match(births$id, person$ID)]
+births$m.exit <- tillTid(lastseen) - tillTid(births$birthdate)
+head(births[, c("id", "age", "exit", "m.exit", "lopnr", "antrec")], 3)
+summary(births[, c("age", "exit", "m.exit")])
+with(births, sum(!is.na(m.exit) & (exit > m.exit)))
+@
+
+}
+No big improvement. 
+
+\end{frame}
+
+%I follow the following rule for the *last* record for each woman: If *m.exit > 50*, set *exit = 50* (as it is);
+%if *is.missing(m.exit)* *exit == 50* (as it is); if *enter < m.exit < exit*, set *exit = m.exit*; if *m.exit < enter* set *m.exit = enter + 0.01*.
+
+\begin{frame}[fragile]{My own rule}
+  
+\scriptsize
+<<setexit>>=
+births$exit <- ifelse(with(births, !is.na(m.exit) & 
+                               (m.exit > enter) & 
+                               (lopnr == antrec)), 
+                      pmin(births$exit, births$m.exit),
+                      births$exit)
+births$exit <- ifelse(with(births, !is.na(m.exit) & 
+                               (m.exit < enter) & 
+                                   (lopnr == antrec)),
+                      births$enter + 0.01,
+                      births$exit)
+births[5:7, ]
+@
+
+\end{frame}
+
+
+\begin{frame}[fragile]{Marital fertility}
+
+It is reasonable to concentate on \emp{married} at \emp{first birth} only:
+
+\scriptsize
+<<firstmar>>=
+sel <- births$id[births$ab == "married" & (births$lopnr == 1)]
+married <- births[births$id %in% sel, ]
+married$birthdate <- tillTid(married$birthdate) - 1845
+@
+
+\end{frame}
+
+\begin{frame}[fragile]{A Glenn analysis}
+
+\scriptsize
+Have couples a preference for boys? 
+
+<<stratage>>=
+fit <- coxreg(Surv(enter, exit, event) ~ I(boys < girls) + 
+                  sex + stillbirth + strata(parity) + birthdate, 
+              data = married)
+@
+<<straltx,results='asis'>>=
+ltx(fit)
+@ 
+\end{frame}
+
+\begin{frame}[fragile]{With birth intervals}
+
+\scriptsize
+<<ivll>>=
+fit <- coxreg(Surv(exit - enter, event) ~ age + I(boys < girls) + 
+                  sex + stillbirth + strata(parity) + birthdate, 
+              data = married)
+@ 
+<<ltxf,results='asis'>>=
+ltx(fit)
+@
+
+How should this be done?  
+\end{frame}
+\end{document}
